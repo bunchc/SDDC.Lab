@@ -5,3 +5,4 @@ license.yml
 config.yml
 software.yml
 templates.yml
+ansible.cfg

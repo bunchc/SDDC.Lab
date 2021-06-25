@@ -49,7 +49,7 @@
 - ansible.builtin.import_playbook: playbooks/deployNsxManager.yml
   when: 
     - Deploy.Product.NSXT.LocalManager == true
- 
+
 - ansible.builtin.import_playbook: playbooks/license_NSXT-LM.yml
   when: 
     - Deploy.Product.NSXT.LocalManager == true
@@ -123,3 +123,13 @@
 - ansible.builtin.import_playbook: playbooks/license_vRLI.yml
   when: 
     - Deploy.Product.vRLI == true
+
+
+# Deploy vCloud Director
+- ansible.builtin.import_playbook: playbooks/deployVcloud.yml
+  when: 
+    - Deploy.Product.vCloudDirector == true
+
+- ansible.builtin.import_playbook: playbooks/license_vCloud.yml
+  when: 
+    - Deploy.Product.vCloudDirector == true

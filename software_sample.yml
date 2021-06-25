@@ -320,6 +320,18 @@ Software:
           FileExt: ova
       Patches: []
 
+    vCloudDirector:
+      Installers:
+        "10.2.2":
+          Name: vCloud Director v10.2.2
+          File: VMware_Cloud_Director-10.2.2.5821-17855679_OVF10.ova
+          Location:
+            Local: "{{ RootDirectory }}/VMware/vCloudDirector/v10.2.2"
+            URL:
+          Version: "10.2.2"
+          FileExt: "ova"
+      Patches: []
+
   Ubuntu:
     Server:
       Installers:
