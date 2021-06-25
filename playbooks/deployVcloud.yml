@@ -1,0 +1,254 @@
+##
+##    Project: SDDC.Lab
+##    Authors: Luis Chanu & Rutger Blom & Cody Bunch
+##   Filename: playbooks/deployVcloud.yml
+##
+---
+- hosts: localhost
+  name: deployVcloud.yml
+  tasks:
+    - name: deployVcloud_Playbook
+      ansible.builtin.debug:
+        msg: "Starting playbook: {{ ansible_play_name }}"
+
+    - name: Display error message if Pod-XXX-Config file is not valid or provided
+      ansible.builtin.pause:
+        seconds: 5
+        prompt: |
+          *****************************************************************************************************
+          ****************************************** ERROR MESSAGE ********************************************
+          *****************************************************************************************************
+
+            A valid "Pod-XXX-Config.yml" file is required in order for this playbook to run.
+
+            Please verify:
+            ==============
+              1) You supplied a valid Pod-XXX-Config.yml file via the ansible-playbook -e "@Pod-XXX-Config.yml"
+                 command-line option.  Here is an example of a how to load a Pod-XXX-Config.yml file that is
+                 located in your home directory:
+                                    ansible-playbook -e "@~/Pod-XXX-Config.yml" deploy.yml
+
+              2) The Pod-XXX-Config.yml file provided was created using the playbooks/createPodConfig.yml script.
+                 All Pod configuration files used to deploy labs MUST be generated using that script.
+
+              3) You included the proper path with the "-e" option to the Pod-XXX-Config.yml file.
+
+              4) You prefaced the file name in the "-e" option with a '@', as shown in the example above.
+
+          *****************************************************************************************************
+      when:
+        - Valid_Pod_Config_File is not defined
+
+    - name: Exit Ansible playbook if Pod-XXX-Config.yml file is not valid or provided
+      ansible.builtin.meta: end_play
+      when: Valid_Pod_Config_File is not defined
+
+
+    - name: DEBUG -- Display Target Variables (Pause)
+      ansible.builtin.pause:
+        seconds: "{{ DEBUG.DisplayDelayInSeconds }}"
+        prompt: |
+          ================================ Display Variables For Pod {{ '%03d'|format(Pod.Number|int) }} ==================================
+
+
+                                     Ansible Playbook: {{ ansible_play_name }}
+
+                                    Target.Deployment: {{ Target.Deployment }}
+
+                                          Target.FQDN: {{ Target.FQDN }}
+                                          Target.User: {{ Target.User }}
+                                      Target.Password: {{ Target.Password }}
+                                       Target.Cluster: {{ Target.Cluster }}
+                                    Target.DataCenter: {{ Target.DataCenter }}
+                                     Target.Datastore: {{ Target.Datastore }}
+                                      Target.VMFolder: {{ Target.VMFolder }}
+
+                                         vCloud Version: {{ Deploy.Software.vCloudDirector.Version }}
+                                            vCloud FQDN: {{ Nested_vCloud.FQDN }}
+                                          vCloud VMName: {{ Nested_vCloud.VMName }}
+                                      vCloud Admin User: {{ Nested_vCloud.Credential.admin.Name }}
+                                  vCloud Admin Password: {{ Nested_vCloud.Credential.admin.Password }}
+
+
+                                                OVF Variables
+                                                =============
+
+                                            vCloud Size: {{ Nested_vCloud.Deployment.Size }}
+                                    Network PortGroup: {{ Target.PortGroup.Management.Name }}
+
+                                 Network IPv4 Address: {{ Nested_vCloud.Address.IPv4.Address }}
+                                      Network Netmask: {{ (Nested_vCloud.Address.IPv4.Address + '/' + Nested_vRLI.Address.IPv4.Prefix) | ipaddr('netmask') }}
+                                      Network Gateway: {{ Nested_vCloud.Address.IPv4.Gateway }}
+
+                                   Network DNS Server: {{ Common.DNS.Server1.IPv4 }}
+                                   Network DNS Domain: {{ Common.DNS.Domain }}
+
+                                   vCloud Root Password: {{ Nested_vCloud.Credential.root.Password }}
+
+                                      vCloud Media Path: {{ Deploy.Software.vCloudDirector.Directory }}
+                                      vCloud Media File: {{ Deploy.Software.vCloudDirector.File }}
+
+          =================================================================================================
+      when:
+        - DEBUG.DisplayVariables == true
+
+    - name: Check if vCloud Director is already installed
+      ansible.builtin.uri:
+        url: https://{{ Nested_vCloud.FQDN }}
+        validate_certs: false
+        timeout: 5
+      register: vcloud_check
+      ignore_errors: true
+      failed_when: false
+      no_log: true
+      when: Deploy.Product.vCloudDirector == true
+
+    - name: Deploy vCloud Director from OVA
+      community.vmware.vmware_deploy_ovf:
+        hostname: "{{ Target.FQDN }}"
+        username: "{{ Target.User }}"
+        password: "{{ Target.Password }}"
+        validate_certs: false
+        datastore: "{{ Target.Datastore }}"
+        allow_duplicates: false
+        folder: "{% if Target.Deployment == 'vCenter' %}/{{ Target.DataCenter }}/vm/{{ Target.VMFolder }}{% else %}{{ Target.VMFolder }}{% endif %}"         # For vCenter deployment, VM Folder path must be the FULL path: /<DataCenter>/vm/<ParentFolder>/<ChildFolder>
+        datacenter: "{{ Target.DataCenter }}"
+        cluster: "{{ Target.Cluster }}"
+        name: "{{ Nested_vCloud.VMName }}"
+        ovf: "{{ Deploy.Software.vCloudDirector.Directory }}/{{ Deploy.Software.vCloudDirector.File }}"
+        deployment_option: "{{ Nested_vCloud.Deployment.Size }}"
+        networks:
+          "eth0 Network": "{{ Target.PortGroup.RouterUplink }}"
+          "eth1 Network": "{{ Target.PortGroup.RouterUplink }}"
+        disk_provisioning: "{{ Common.DiskProvisioning }}"
+        power_on: true
+        wait_for_ip_address: true
+        inject_ovf_env: true
+        properties:
+          vm.vmname: "{% if Target.Deployment == 'Host' %}VMware_vCloud_Director{% else %}{{ omit }}{% endif %}"                                         # Host requires static vmname value, vCenter complains, so omitting property from vCenter Deployment
+          preferipv6: "False"
+          rootpw: "{{ Nested_vCloud.Credential.root.Password }}"
+          hostname: "{{ Nested_vCloud.FQDN }}"
+          vami.DNS.VMware_vCloud_Director: "{{ Common.DNS.Server1.IPv4 }}"
+          vami.domain.VMware_vCloud_Director: "{{ Common.DNS.Domain }}"
+          vami.gateway.VMware_vCloud_Director: "{{ Nested_vCloud.Address.eth0.IPv4.Gateway }}"
+          vami.ip0.VMware_vCloud_Director: "{{ Nested_vCloud.Address.eth0.IPv4.Address }}"
+          vami.netmask0.VMware_vCloud_Director: "{{ (Nested_vCloud.Address.eth0.IPv4.Address + '/' + Nested_vCloud.Address.IPv4.Prefix) | ipaddr('netmask') }}"
+          vami.ip1.VMware_vCloud_Director: "{{ Nested_vCloud.Address.eth1.IPv4.Address }}"
+          vami.netmask1.VMware_vCloud_Director: "{{ (Nested_vCloud.Address.eth1.IPv4.Address + '/' + Nested_vCloud.Address.IPv4.Prefix) | ipaddr('netmask') }}"
+          vami.searchpath.VMware_vCloud_Director: "{{ Common.DNS.Domain }}"
+          vcloudapp.enable_ssh.VMware_vCloud_Director: true
+          vcloudapp.expire_root_password.VMware_vCloud_Director: false
+          vcloudapp.ntp-server.VMware_vCloud_Director: "{{ Common.NTP.Server1.IPv4 }}"
+          vcloudapp.varoot-password.VMware_vCloud_Director: "{{ Nested_vCloud.Credential.root.Password }}"
+          vcloudconf.db_pw.VMware_vCloud_Director: "{{ Nested_vCloud.Credential.root.Password }}"
+          vcloudconf.admin_email.VMware_vCloud_Director: "{{ (Nested_vRLI.Credential.admin.Name + '@' + Common.DNS.Domain) }}"
+          vcloudconf.admin_fname.VMware_vCloud_Director: "vcdadmin"
+          vcloudconf.admin_pwd.VMware_vCloud_Director: "{{ Nested_vCloud.Credential.root.Password }}"
+          vcloudconf.admin_uname.VMware_vCloud_Director: "administrator"
+          vcloudconf.inst_id.VMware_vCloud_Director: "59"
+          vcloudconf.sys_name.VMware_vCloud_Director: "{{ Nested_vCloud.FQDN }}"
+      when:
+        - Deploy.Product.vCloudDirector == true
+        - vcloud_check.status != 200
+
+    - name: Start checking if the vCloud Director Web UI is available
+      ansible.builtin.uri:
+        url: https://{{ Nested_vCloud.FQDN }}
+        validate_certs: false
+        timeout: 5
+      register: vcloud_webui_check
+      until: vcloud_webui_check.status == 200
+      when:
+        - Deploy.Product.vCloudDirector == true
+        - vcloud_check.status != 200
+      retries: 10
+      delay: 60
+
+    - name: Perform vRLI bootstrap
+      ansible.builtin.uri:
+        url: https://{{ Nested_vRLI.FQDN }}:9543/api/v1/deployment/new
+        validate_certs: no
+        method: POST
+        timeout: 240
+        body:
+          user:
+            userName: "{{ Nested_vRLI.Credential.admin.Name }}"
+            password: "{{ Nested_vRLI.Credential.admin.Password }}"
+            email: "{{ (Nested_vRLI.Credential.admin.Name + '@' + Common.DNS.Domain) }}"
+        body_format: json
+      when:
+        - Deploy.Product.vCloudDirector == true
+        - vrli_check.status != 200
+
+    - name: Obtain a session ID from the vRLI API 
+      ansible.builtin.uri:
+        url: https://{{ Nested_vRLI.FQDN }}:9543/api/v1/sessions
+        validate_certs: no
+        method: POST
+        body:
+          username: "{{ Nested_vRLI.Credential.admin.Name }}"
+          password: "{{ Nested_vRLI.Credential.admin.Password }}"
+          provider: "Local"
+        body_format: json
+      register: vrli_session
+      when:
+        - Deploy.Product.vCloudDirector == true
+        - vrli_check.status != 200
+
+    - name: Add vSphere to vRLI
+      ansible.builtin.uri:
+        url: https://{{ Nested_vRLI.FQDN }}:9543/api/v1/vsphere
+        validate_certs: no
+        method: POST
+        timeout: 240
+        headers:
+          Authorization: "Bearer {{ vrli_session.json.sessionId }}"
+        body:
+          hostname: "{{ Nested_vCenter.FQDN }}"
+          username: "{{ Nested_vCenter.User }}"
+          password: "{{ Nested_vCenter.Password }}"
+          acceptCert: true
+          syslogProtocol: "tcp"
+          configureNewEsxiHostsAutomatically: true
+          vsphereEventsEnabled: true
+          target: "{{ Nested_vRLI.Address.IPv4.Address }}"
+        body_format: json
+        status_code: 201
+      when:
+        - Deploy.Product.vCloudDirector == true
+        - vrli_check.status != 200
+
+    - name: Configure NTP
+      ansible.builtin.uri:
+        url: https://{{ Nested_vRLI.FQDN }}:9543/api/v1/time/config
+        validate_certs: no
+        method: PUT
+        timeout: 240
+        headers:
+          Authorization: "Bearer {{ vrli_session.json.sessionId }}"
+        body:
+          timeReference: NTP_SERVER
+          ntpServers:
+            - "{{ Common.NTP.Server1.IPv4 }}"
+        body_format: json
+        status_code: 200
+      when:
+        - Deploy.Product.vCloudDirector == true
+        - vrli_check.status != 200
+
+    - name: Write annotation on the vRLI VM
+      community.vmware.vmware_guest:
+        hostname: "{{ Target.FQDN }}"
+        username: "{{ Target.User }}"
+        password: "{{ Target.Password }}"
+        validate_certs: no
+        cluster: "{{ Target.Cluster }}"
+        datacenter: "{{ Target.DataCenter }}"
+        folder: "{{ Target.VMFolder }}"
+        name: "{{ Nested_vRLI.VMName }}"
+        annotation: | 
+                    {{ Common.Annotation }}
+                    {{ Deploy.Software.vRLI.Vendor }} {{ Deploy.Software.vRLI.Product }} {{ Deploy.Software.vRLI.Version }}
+                    Username: {{ Nested_vRLI.Credential.admin.Name }}
+                    Password: {{ Nested_vRLI.Credential.admin.Password }}
